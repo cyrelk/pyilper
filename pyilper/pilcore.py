@@ -111,6 +111,17 @@
 # - introduced KEYBOARD_DELAY configuration parameter
 # 09.01.2019 jsi
 # - prepare release
+# 31.05.2019 jsi
+# - 1.8.1 development
+# 05.06.2019
+# - 1.8.1 production
+# 06.11.2019 jsi
+# - 1.8.2 development
+# 03.02.2020 jsi
+# - prepare release
+# 29.04.2020 jsi
+# - 1.8.3 development
+# 
 #
 import platform
 #
@@ -118,8 +129,8 @@ import platform
 #
 # General constants:
 #
-PRODUCTION= True      # Production/Development Version
-VERSION="1.8.0"       # pyILPR version number
+PRODUCTION=  False    # Production/Development Version
+VERSION="1.8.3"       # pyILPR version number
 CONFIG_VERSION="2"    # Version number of pyILPER config file, must be string
 #
 # Python minimum version

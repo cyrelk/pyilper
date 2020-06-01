@@ -342,6 +342,13 @@
 # - set pushbutton autodefault property false
 # 05.02.2018 jsi
 # - allow smaller font sizes for directory listing
+# 06.11.2019 jsi
+# - changed text in drive type selection box to "HP9114B"
+# 29.04.2020 jsi
+# - initialize directory table with zero rows (prevents doing right clicks into
+#   empty rows of a directory which caused a crash of the program)
+# - make all entries of the directory table read only
+# - left click on a selected row does a deselect.
 #
 from PyQt5 import QtCore, QtGui, QtWidgets
 import time
@@ -503,7 +510,7 @@ class cls_DriveWidget(QtWidgets.QWidget):
       self.radbutCass.setText("HP82161A")
       self.vbox2.addWidget(self.radbutCass)
       self.radbutDisk = QtWidgets.QRadioButton(self.gbox)
-      self.radbutDisk.setText("HP9114A")
+      self.radbutDisk.setText("HP9114B")
       self.radbutHdrive1 = QtWidgets.QRadioButton(self.gbox)
       self.vbox2.addWidget(self.radbutDisk)
       self.radbutHdrive1.setText("HDRIVE1")
@@ -537,7 +544,7 @@ class cls_DriveWidget(QtWidgets.QWidget):
 #     directory widget
 #
       self.vbox1= QtWidgets.QVBoxLayout()
-      self.lifdir=cls_LifDirWidget(self,self.name,10,FONT,self.papersize)
+      self.lifdir=cls_LifDirWidget(self,self.name,0,FONT,self.papersize)
       self.vbox1.addWidget(self.lifdir)
 
       self.hbox2= QtWidgets.QHBoxLayout()
@@ -894,6 +901,37 @@ class DirTableView(QtWidgets.QTableView):
         self.parent=parent
         self.papersize= papersize
 #
+#       custom mouse press even. A click to a selected row unselects it
+#
+    def mousePressEvent(self, event):
+        if event.button()== QtCore.Qt.LeftButton:
+           row=self.indexAt(event.pos()).row()
+           isSelected=False
+#
+#       check if the row is already selected
+#         
+           for i in self.selectionModel().selection().indexes():
+              if i.row()== row:
+                 isSelected=True
+#
+#       yes, clear
+#
+           if isSelected:
+              self.selectionModel().clear()
+              event.accept()
+              return
+#
+#       no, select
+#
+           else:
+              self.selectRow(row)
+              event.accept()
+              return
+#
+#       No left button, let others do the job
+#
+        event.ignore()
+#
 #       context menu
 #
     def contextMenuEvent(self, event):
@@ -961,11 +999,11 @@ class cls_LifDirWidget(QtWidgets.QWidget):
         self.__font_size__= 13
         self.__table__ = DirTableView(self,self.__papersize__)  # Table view for dir
         self.__table__.setSortingEnabled(False)  # no sorting
-        self.__table__.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+#       self.__table__.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
 #
 #       switch off grid, no focus, no row selection
 #
-        self.__table__.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+#       self.__table__.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         self.__table__.setFocusPolicy(QtCore.Qt.NoFocus)
         self.__table__.setShowGrid(False)
         self.__columns__=6     # 5 rows for directory listing
@@ -1106,6 +1144,7 @@ class cls_LifDirWidget(QtWidgets.QWidget):
                 item = QtGui.QStandardItem(x[column])
                 item.setFont(self.__font__)
                 item.setTextAlignment(QtCore.Qt.AlignLeft)
+                item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEditable)
                 self.__model__.setItem(self.__rowcount__, column, item)
             self.__rowcount__+=1
         lif.lifclose()
@@ -1173,7 +1212,16 @@ class cls_LifDirWidget(QtWidgets.QWidget):
 # 28.01.2017 jsi
 # - removed self.__islocked__ in cls_pildrive because it hides the
 #   variable of cls_pildevbase
-
+# 16.02.2020 jsi
+# - call self.__clear_device__ if medium (lif image file) was changed. 
+#   Clear the content of both buffers in the device clear subroutine 
+#   (hint by Christoph Gießelink) 
+# - clear disk drive status after successful reading or writing
+#   (hint by Christoph Gießelink) 
+# - call self.__setstatus__ instead of setting the status variable directly
+# - return write protect error in wrec if write to file fails instead of 
+#   error code 29
+#
 
 
 class cls_pildrive(cls_pildevbase):
@@ -1260,6 +1308,7 @@ class cls_pildrive(cls_pildevbase):
       self.__surfaces__= surfaces
       self.__blocks__= blocks
       self.__nbe__= tracks*surfaces*blocks
+
       k=0
       for i in (24,16,8,0):
          self.__lif__[k]= tracks >> i & 0xFF
@@ -1270,6 +1319,14 @@ class cls_pildrive(cls_pildevbase):
       for i in (24,16,8,0):
          self.__lif__[k]= blocks >> i & 0xFF
          k+=1
+      self.__clear_device__()
+      self.__setstatus__(0)   
+#
+#     Note: the device status should be 23 (new media) here. This status
+#     is reset to zero after a SST was processed by the real drive which has not
+#     been implemented in pildevbase.py so far. Without that at least the
+#     HP-71B hangs on media initialization.
+#
       return
 #
 # set aid and did of device
@@ -1311,7 +1368,7 @@ class cls_pildrive(cls_pildevbase):
       self.__access_lock__.acquire()
       if self.__islocked__:
          self.__access_lock__.release()
-         self.__status__= 20   # no medium error
+         self.__setstatus__(20)   # no medium error
          return
       try:
          if self.__isWindows__:
@@ -1323,16 +1380,16 @@ class cls_pildrive(cls_pildevbase):
          os.close(fd)
          l=len(b)
 #        print("rrec record %d size %d" % (self.__pe__,l))
+         self.__setstatus__(0)   # success, clear status
          for i in range (l):
             self.__buf0__[i]= b[i]
          if l < 256:
             for i in range(l,256):
                self.__buf0__[i]=0x00
       except OSError as e:
-         self.__status__= 20
+         self.__setstatus__(20)  # failed read always returns no medium error
       self.__access_lock__.release()
       return
-
 #
 # fix the header if record 0 (LIF header) is written
 #
@@ -1379,7 +1436,7 @@ class cls_pildrive(cls_pildevbase):
       self.__access_lock__.acquire()
       if self.__islocked__:
          self.__access_lock__.release()
-         self.__status__= 20 # no medium error
+         self.__setstatus__(20) # no medium error
          return
       try:
          if self.__isWindows__:
@@ -1394,11 +1451,14 @@ class cls_pildrive(cls_pildevbase):
             os.write(fd,self.__buf0__)
             self.__modified__= True
             self.__timestamp__= time.time()
+            self.__setstatus__(0)   # success, clear status
          except OSError as e:
-            self.__status__= 24
+            self.__setstatus__(29)  # write error always returns write protect
+                                    # error
          os.close(fd)
       except OSError as e:
-         self.__status__= 29
+         self.__setstatus__(29) # file open failed always returns write 
+                                # protect error
       self.__access_lock__.release()
       return
 
@@ -1414,7 +1474,7 @@ class cls_pildrive(cls_pildevbase):
       self.__access_lock__.acquire()
       if self.__islocked__:
          self.__access_lock__.release()
-         self.__status__= 20 # no medium error
+         self.__setstatus__(20) # no medium error
          return
       try:
          if self.__isWindows__:
@@ -1425,8 +1485,10 @@ class cls_pildrive(cls_pildevbase):
             os.write(fd,b)
          os.close(fd)
          self.__timestamp__= time.time()
+         self.__setstatus__(0)   # success, clear status
       except OSError:
-         self.__status__= 29
+         self.__setstatus__(29)  # failed file creation and initialization 
+                                 # always returns write protect error
       self.__access_lock__.release()
       return
 #
@@ -1441,6 +1503,15 @@ class cls_pildrive(cls_pildevbase):
       self.__access_lock__.acquire()
       self.__modified__= False
       self.__access_lock__.release()
+#
+#     Initialize/Invalidate buffer content. The HP-41 as controller uses
+#     buf 1 as a directory cache.
+#
+      for i in range (256):
+         self.__buf0__[i]= 0x0;
+         self.__buf1__[i]= 0x0;
+      return
+
 
 #
 # receive data to disc according to DDL command
@@ -1478,9 +1549,9 @@ class cls_pildrive(cls_pildevbase):
             self.__pe0__= self.__pe0__ | n
             if self.__pe0__ < self.__nbe__:
                self.__pe__= self.__pe0__
-               self.__status__= 0
+               self.__setstatus__(0)
             else:
-               self.__status__= 28
+               self.__setstatus__(28)
             self.__fpt__= False
          else:
             self.__pe0__= self.__pe0__ & 255

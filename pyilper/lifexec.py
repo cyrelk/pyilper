@@ -93,6 +93,11 @@
 # - code cleanup
 # 12.12.2018 jsi:
 # - changed all subprocess calls to the subprocess.run interface
+# 31.5.2019 jsi:
+# - added HP-75 text file import/export
+# - do not run lifput in exec_double_import if first command failed
+# 03.06.2019 jsi:
+# - show HP-75 text files optional with or without line numbers
 #
 import subprocess
 import tempfile
@@ -267,6 +272,9 @@ def exec_double_import(parent,cmd1,cmd2,inputfile):
       ret= subprocess.run(cmd1,stdin=fd,stdout=tmpfile,stderr=subprocess.PIPE)
       check_errormessages(parent,ret)
       os.close(fd)
+      if ret.returncode!=0:
+         tempfile.close()
+         return
 #
 #  execute second command
 #
@@ -611,38 +619,55 @@ class cls_lifexport (QtWidgets.QDialog):
       self.vlayout.addWidget(self.gBox0)
       
       self.gBox1=QtWidgets.QGroupBox("Postprocessing options")
-      self.radio1= QtWidgets.QRadioButton("convert LIF-Text to ASCII")
-      self.radio1.setEnabled(False)
-      self.radio2= QtWidgets.QRadioButton("unpack Eramco MLDL-OS ROM file")
-      self.radio2.setEnabled(False)
-      self.radio3= QtWidgets.QRadioButton("unpack HEPAX HP41 SDATA ROM file")
-      self.radio3.setEnabled(False)
-      self.radio4= QtWidgets.QRadioButton("remove LIF header")
-      self.radio5= QtWidgets.QRadioButton("None")
+      self.radioLifAscii= QtWidgets.QRadioButton("convert LIF-Text to ASCII")
+      self.radioLifAscii.clicked.connect(self.do_radio)
+      self.radioLifAscii.setEnabled(False)
+      self.radioTxt75Ascii= QtWidgets.QRadioButton("convert HP-75 text file to ASCII, omit line numbers")
+      self.radioTxt75Ascii.clicked.connect(self.do_radio)
+      self.radioTxt75Ascii.setEnabled(False)
+      self.radioTxt75AsciiNumbers= QtWidgets.QRadioButton("convert HP-75 text file to ASCII, retain line numbers")
+      self.radioTxt75AsciiNumbers.clicked.connect(self.do_radio)
+      self.radioTxt75AsciiNumbers.setEnabled(False)
+      self.radioEramco= QtWidgets.QRadioButton("unpack Eramco MLDL-OS ROM file")
+      self.radioEramco.clicked.connect(self.do_radio)
+      self.radioEramco.setEnabled(False)
+      self.radioHepax= QtWidgets.QRadioButton("unpack HEPAX HP41 SDATA ROM file")
+      self.radioHepax.setEnabled(False)
+      self.radioHepax.clicked.connect(self.do_radio)
+      self.radioRaw= QtWidgets.QRadioButton("remove LIF header, create RAW file")
+      self.radioRaw.clicked.connect(self.do_radio)
+      self.radioNone= QtWidgets.QRadioButton("None")
+      self.radioNone.clicked.connect(self.do_radio)
 
       if self.liffiletype== "TEXT":
-         self.radio1.setEnabled(True)
-         self.radio1.setChecked(True)
+         self.radioLifAscii.setEnabled(True)
+         self.radioLifAscii.setChecked(True)
+         self.outputextension=".txt"
+      elif self.liffiletype== "TXT75":
+         self.radioTxt75Ascii.setEnabled(True)
+         self.radioTxt75Ascii.setChecked(True)
+         self.radioTxt75AsciiNumbers.setEnabled(True)
          self.outputextension=".txt"
       elif self.liffiletype== "X-M41":
-         self.radio2.setEnabled(True)
-         self.radio2.setChecked(True)
+         self.radioEramco.setEnabled(True)
+         self.radioEramco.setChecked(True)
          self.outputextension=".rom"
       elif self.liffiletype== "SDATA":
-         self.radio5.setChecked(True)
-         self.radio3.setEnabled(True)
-         self.radio3.clicked.connect(self.do_radio3)
+         self.radioNone.setChecked(True)
+         self.radioHepax.setEnabled(True)
          self.outputextension=".lif"
       else:
-         self.radio5.setChecked(True)
+         self.radioNone.setChecked(True)
          self.outputextension=".lif"
 
       self.vbox=QtWidgets.QVBoxLayout()
-      self.vbox.addWidget(self.radio1)
-      self.vbox.addWidget(self.radio2)
-      self.vbox.addWidget(self.radio3)
-      self.vbox.addWidget(self.radio4)
-      self.vbox.addWidget(self.radio5)
+      self.vbox.addWidget(self.radioLifAscii)
+      self.vbox.addWidget(self.radioTxt75Ascii)
+      self.vbox.addWidget(self.radioTxt75AsciiNumbers)
+      self.vbox.addWidget(self.radioEramco)
+      self.vbox.addWidget(self.radioHepax)
+      self.vbox.addWidget(self.radioRaw)
+      self.vbox.addWidget(self.radioNone)
       self.vbox.addStretch(1)
       self.gBox1.setLayout(self.vbox)
 
@@ -667,10 +692,22 @@ class cls_lifexport (QtWidgets.QDialog):
       self.buttonBox.accepted.connect(self.do_ok)
       self.buttonBox.rejected.connect(self.do_cancel)
       self.vlayout.addWidget(self.buttonBox)
-
-   def do_radio3(self):
-      if self.radio3.isChecked():
+#
+#  Radio button clicked, adjust file type
+#
+   def do_radio(self):
+      if self.radioLifAscii.isChecked():
+         self.outputextension=".txt"
+      elif self.radioTxt75Ascii.isChecked():
+         self.outputextension=".txt"
+      elif self.radioTxt75AsciiNumbers.isChecked():
+         self.outputextension=".txt"
+      elif self.radioHepax.isChecked():
          self.outputextension=".rom"
+      elif self.radioEramco.isChecked():
+         self.outputextension=".rom"
+      elif self.radioRaw.isChecked():
+         self.outputextension=".raw"
       else:
          self.outputextension=".lif"
       self.outputfile=os.path.join(self.workdir, self.liffilename.lower()+self.outputextension)
@@ -707,15 +744,19 @@ class cls_lifexport (QtWidgets.QDialog):
    def do_ok(self):
       if self.outputfile != "":
 
-         if self.radio1.isChecked():
+         if self.radioLifAscii.isChecked():
             exec_double_export(self,[add_path("lifget"),"-r",self.lifimagefile,self.liffilename],add_path("liftext"),self.outputfile)
-         elif self.radio2.isChecked():
+         elif self.radioTxt75Ascii.isChecked():
+            exec_double_export(self,[add_path("lifget"),"-r",self.lifimagefile,self.liffilename],add_path("liftext75"),self.outputfile)
+         elif self.radioTxt75AsciiNumbers.isChecked():
+            exec_double_export(self,[add_path("lifget"),"-r",self.lifimagefile,self.liffilename], [add_path("liftext75"),"-n"],self.outputfile)
+         elif self.radioEramco.isChecked():
             exec_double_export(self,[add_path("lifget"),"-r",self.lifimagefile,self.liffilename],add_path("er41rom"),self.outputfile)
-         elif self.radio3.isChecked():
+         elif self.radioHepax.isChecked():
             exec_double_export(self,[add_path("lifget"),"-r",self.lifimagefile,self.liffilename],add_path("hx41rom"),self.outputfile)
-         elif self.radio4.isChecked():
+         elif self.radioRaw.isChecked():
             exec_single(self,[add_path("lifget"),"-r",self.lifimagefile,self.liffilename,self.outputfile])
-         elif self.radio5.isChecked():
+         elif self.radioNone.isChecked():
             exec_single(self,[add_path("lifget"),self.lifimagefile,self.liffilename,self.outputfile])
       super().accept()
 #
@@ -801,27 +842,33 @@ class cls_lifimport (QtWidgets.QDialog):
 
       self.gBox1=QtWidgets.QGroupBox("Preprocessing options")
       self.bGroup=QtWidgets.QButtonGroup()
-      self.radio1= QtWidgets.QRadioButton("convert from ASCII to LIF-Text (HP-41)")
-      self.radio2= QtWidgets.QRadioButton("convert from ASCII to LIF-Text (HP-71)")
-      self.radio3= QtWidgets.QRadioButton("convert HP-41 rom file to SDATA file (HEPAX)")
-      self.radio4= QtWidgets.QRadioButton("convert HP-41 rom file to XM-41 file (Eramco MLDL-OS)")
-      self.radio5= QtWidgets.QRadioButton("add LIF header to HP41 FOCAL raw file")
-      self.radio6= QtWidgets.QRadioButton("None")
-      self.radio6.setChecked(True)
-      self.bGroup.addButton(self.radio1) 
-      self.bGroup.addButton(self.radio2)
-      self.bGroup.addButton(self.radio3)
-      self.bGroup.addButton(self.radio4)
-      self.bGroup.addButton(self.radio5)
-      self.bGroup.addButton(self.radio6)
+      self.radioLif41= QtWidgets.QRadioButton("convert from ASCII to LIF-Text (HP-41)")
+      self.radioLif71= QtWidgets.QRadioButton("convert from ASCII to LIF-Text (HP-71)")
+      self.radioTxt75= QtWidgets.QRadioButton("convert from ASCII to HP-75 text, create new line numbers")
+      self.radioTxt75Numbers= QtWidgets.QRadioButton("convert from ASCII to HP-75 text, take existing line numbers")
+      self.radioHepax= QtWidgets.QRadioButton("convert HP-41 rom file to SDATA file (HEPAX)")
+      self.radioEramco= QtWidgets.QRadioButton("convert HP-41 rom file to XM-41 file (Eramco MLDL-OS)")
+      self.radioFocal= QtWidgets.QRadioButton("add LIF header to HP41 FOCAL raw file")
+      self.radioNone= QtWidgets.QRadioButton("None")
+      self.radioNone.setChecked(True)
+      self.bGroup.addButton(self.radioLif41) 
+      self.bGroup.addButton(self.radioLif71)
+      self.bGroup.addButton(self.radioTxt75)
+      self.bGroup.addButton(self.radioTxt75Numbers)
+      self.bGroup.addButton(self.radioHepax)
+      self.bGroup.addButton(self.radioEramco)
+      self.bGroup.addButton(self.radioFocal)
+      self.bGroup.addButton(self.radioNone)
       self.bGroup.buttonClicked.connect(self.do_butclicked)
 
       self.vbox=QtWidgets.QVBoxLayout()
-      self.vbox.addWidget(self.radio1)
-      self.vbox.addWidget(self.radio2)
-      self.vbox.addWidget(self.radio3)
-      self.vbox.addWidget(self.radio4)
-      self.vbox.addWidget(self.radio5)
+      self.vbox.addWidget(self.radioLif41)
+      self.vbox.addWidget(self.radioLif71)
+      self.vbox.addWidget(self.radioTxt75)
+      self.vbox.addWidget(self.radioTxt75Numbers)
+      self.vbox.addWidget(self.radioHepax)
+      self.vbox.addWidget(self.radioEramco)
+      self.vbox.addWidget(self.radioFocal)
 
       self.hbox2=QtWidgets.QHBoxLayout()
       self.lbl=QtWidgets.QLabel("LIF Filename:")
@@ -838,7 +885,7 @@ class cls_lifimport (QtWidgets.QDialog):
       self.gBox1.setLayout(self.vbox)
       self.gBox1.setEnabled(False)
       self.vlayout.addWidget(self.gBox1)
-      self.vbox.addWidget(self.radio6)
+      self.vbox.addWidget(self.radioNone)
       self.vbox.addStretch(1)
 
       self.buttonBox = QtWidgets.QDialogButtonBox(self)
@@ -880,10 +927,10 @@ class cls_lifimport (QtWidgets.QDialog):
 #  any radio button clicked, enable/disable lif filename entry, check ok button
 #
    def do_butclicked(self,id):
-      if id== self.radio1 or id==self.radio2 or id==self.radio3 or id==self.radio4 or id==self.radio5:
-         self.leditFileName.setEnabled(True)
-      else:
+      if id== self.radioNone:
          self.leditFileName.setEnabled(False)
+      else:
+         self.leditFileName.setEnabled(True)
       self.do_checkenable()
 
 #
@@ -891,10 +938,11 @@ class cls_lifimport (QtWidgets.QDialog):
 #
    def do_checkenable(self):
       self.buttonBox.button(QtWidgets.QDialogButtonBox.Ok).setEnabled(False)
-      if (self.radio1.isChecked() or self.radio2.isChecked() or self.radio3.isChecked() or self.radio4.isChecked() or self.radio5.isChecked()) and self.leditFileName.text() != "":
+      if self.radioNone.isChecked():
          self.buttonBox.button(QtWidgets.QDialogButtonBox.Ok).setEnabled(True)
-      if self.radio6.isChecked():
-         self.buttonBox.button(QtWidgets.QDialogButtonBox.Ok).setEnabled(True)
+      else:
+         if self.leditFileName.text() != "":
+            self.buttonBox.button(QtWidgets.QDialogButtonBox.Ok).setEnabled(True)
       return
 
 #
@@ -902,21 +950,25 @@ class cls_lifimport (QtWidgets.QDialog):
 #
    def do_ok(self):
       if self.inputfile != "":
-         if self.radio1.isChecked() or self.radio2.isChecked() or self.radio3.isChecked() or self.radio4.isChecked() or self.radio5.isChecked():
-            self.liffilename=self.leditFileName.text()
-            if self.radio1.isChecked():
-               exec_double_import(self,[add_path("textlif"),"-r 0",self.liffilename],[add_path("lifput"),self.lifimagefile],self.inputfile)
-            elif self.radio2.isChecked():
-               exec_double_import(self,[add_path("textlif"),self.liffilename],[add_path("lifput"),self.lifimagefile],self.inputfile)
-            elif self.radio3.isChecked():
-               exec_double_import(self,[add_path("rom41hx"),self.liffilename],[add_path("lifput"),self.lifimagefile],self.inputfile)
-            elif self.radio4.isChecked():
-               exec_double_import(self,[add_path("rom41er"),self.liffilename],[add_path("lifput"),self.lifimagefile],self.inputfile)
-            elif self.radio5.isChecked():
-               exec_double_import(self,[add_path("raw41lif"),self.liffilename],[add_path("lifput"),self.lifimagefile],self.inputfile)
-         else:
+         if self.radioNone.isChecked():
             if  cls_chk_import.exec(None, self.inputfile):
                exec_single(self,[add_path("lifput"),self.lifimagefile,self.inputfile])
+         else:
+            self.liffilename=self.leditFileName.text()
+            if self.radioLif41.isChecked():
+               exec_double_import(self,[add_path("textlif"),"-r 0",self.liffilename],[add_path("lifput"),self.lifimagefile],self.inputfile)
+            elif self.radioLif71.isChecked():
+               exec_double_import(self,[add_path("textlif"),self.liffilename],[add_path("lifput"),self.lifimagefile],self.inputfile)
+            elif self.radioTxt75.isChecked():
+               exec_double_import(self,[add_path("textlif75"),self.liffilename],[add_path("lifput"),self.lifimagefile],self.inputfile)
+            elif self.radioTxt75Numbers.isChecked():
+               exec_double_import(self,[add_path("textlif75"),"-n",self.liffilename],[add_path("lifput"),self.lifimagefile],self.inputfile)
+            elif self.radioHepax.isChecked():
+               exec_double_import(self,[add_path("rom41hx"),self.liffilename],[add_path("lifput"),self.lifimagefile],self.inputfile)
+            elif self.radioEramco.isChecked():
+               exec_double_import(self,[add_path("rom41er"),self.liffilename],[add_path("lifput"),self.lifimagefile],self.inputfile)
+            elif self.radioFocal.isChecked():
+               exec_double_import(self,[add_path("raw41lif"),self.liffilename],[add_path("lifput"),self.lifimagefile],self.inputfile)
       super().accept()
 
 #
@@ -1201,10 +1253,21 @@ class cls_lifview(QtWidgets.QDialog):
       ft=get_finfo_name(liffiletype)
       call= get_finfo_type(ft)[1]
 #
-# decomp41 needs additional parameters (xrmoms)
+# decomp41 needs additional parameters (xmoms)
 #
       if call == "decomp41":
          call= cls_chkxrom.exec()
+#
+# liftext75 has the option to show line numbers
+#
+      elif call == "liftext75":
+         call= add_path(call)
+         reply=QtWidgets.QMessageBox.question(None,'',"Show line numbers?",QtWidgets.QMessageBox.Yes,QtWidgets.QMessageBox.No)
+         if reply== QtWidgets.QMessageBox.Yes:
+            call= [ add_path(call), "-n"]
+#
+# all other lifutil progs
+#
       else:
          call= add_path(call)
       output=exec_double_export(d,[add_path("lifget"),"-r",lifimagefile,liffilename],call,"")

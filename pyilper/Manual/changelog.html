@@ -266,10 +266,29 @@ an import for the HP-71 and the import for the HP-41 wich needs special handling
 <p><b>Incompatibilities to previous pyILPER versions:</b><p>
 <p>Due to the introduction of the HP-75 character set the configuration of character sets in existing <em>pyILPER</em> installations must be adjusted if the <em>Roman-8</em> character set was used.</p>
 <p>For the HP-71 terminal emulation the keystrokes for <code>far left, far right, far up</code> and <code>far down</code> are now <ode>shift left, shift right, shift up</code> and <code>shift down</code>.</p>
-
-
 </ul>
 
+<h3 class="w3-text-teal">pyILPER 1.8.1</h3>
+
+<ul class="w3-ul">
+<li>Added HP-75 text file import and export to the file management functions of the drive tab</li>
+<li>Show HP-75 text files optional with or without line numbers from the context menu of the drive tab directory list</li>
+<li>Show keywords of HP-75 lex files from the context menu of the drive tab directory list</li>
+<li><em>pyILPER</em> now requires at least version 1.7.9 of the <em>LIFUTILS</em>.</li>
+</ul>
+
+<h3 class="w3-text-teal">pyILPER 1.8.2</h3>
+<ul class="w3-ul">
+<li>Python 3.8 compatibility</li>
+ <li>Fixed wrong address view for addresses &gt; 15 and changed device # address view to HP71 style in the virtual HP-IL device status window (courtesy by Christoph Gießelink)</li>
+<li>Clear device buffers on LIF Image file change and clear disk drive status after successful reading or writing (hint from Christoph Gießelink)</li>
+</ul>
+
+<h3 class="w3-text-teal">pyILPER 1.8.2</h3>
+<ul class="w3-ul">
+<li>Disable right clicks into an empty diretory listing in the drive tab.</li>
+<li>Left click on a selected row in the directory listing now deselects it.</li>
+</ul>
 <!-- End content -->
 
 </div>
